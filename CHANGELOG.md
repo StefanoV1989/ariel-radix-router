@@ -4,6 +4,12 @@ All notable changes to this project will be documented here. The format follows 
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-07-19
+
+### Fixed
+
+- Coerce URL strings through PHP's native scalar type rules when invoking typed class handlers.
+
 ## [1.0.0] - 2026-07-19
 
 ### Added

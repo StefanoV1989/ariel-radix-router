@@ -306,7 +306,11 @@ final class RouterEngine
                     throw new \RuntimeException(sprintf('The handler for route "%s" is not callable.', $route->path()));
                 }
 
-                return $target->{$method}(...$parameters);
+                if ($parameters === []) {
+                    return $target->{$method}();
+                }
+
+                return HandlerInvoker::invoke([$target, $method], $parameters);
             }
             $class = $target;
             if (!class_exists($class) && $route->namespace() !== null) {
@@ -318,6 +322,13 @@ final class RouterEngine
                 $instance = new $class();
                 $handler = [$instance, $method];
             }
+            if (!is_callable($handler)) {
+                throw new \RuntimeException(sprintf('The handler for route "%s" is not callable.', $route->path()));
+            }
+
+            return $parameters === []
+                ? $handler()
+                : HandlerInvoker::invoke($handler, $parameters);
         } elseif (is_string($handler) && !is_callable($handler) && $route->namespace() !== null) {
             $handler = trim($route->namespace(), '\\') . '\\' . ltrim($handler, '\\');
         }

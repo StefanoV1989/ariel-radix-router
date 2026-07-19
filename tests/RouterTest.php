@@ -191,6 +191,15 @@ final class RouterTest extends TestCase
         self::assertSame('static:7', Router::dispatch(new Request('GET', '/static/7')));
         self::assertSame('instance:8', Router::dispatch(new Request('GET', '/instance/8')));
     }
+
+    public function testCoercesUrlSegmentsForScalarTypedHandlers(): void
+    {
+        Router::get('/typed/{id}/{ratio}/{enabled}', [TestController::class, 'typedScalars']);
+        Router::get('/typed-controller/{id}', [TestController::class, 'typedShow']);
+
+        self::assertSame([42, 1.5, false], Router::dispatch(new Request('GET', '/typed/42/1.5/0')));
+        self::assertSame('typed:7', Router::dispatch(new Request('GET', '/typed-controller/7')));
+    }
 }
 
 final class TestController
@@ -203,5 +212,16 @@ final class TestController
     public function show(string $id): string
     {
         return 'instance:' . $id;
+    }
+
+    public function typedShow(int $id): string
+    {
+        return 'typed:' . $id;
+    }
+
+    /** @return array{int, float, bool} */
+    public static function typedScalars(int $id, float $ratio, bool $enabled): array
+    {
+        return [$id, $ratio, $enabled];
     }
 }
