@@ -100,6 +100,11 @@ Router::get('/reports/{year}/{month}', $handler)
 
 For overlapping dynamic routes, more specific known constraints win. Static segments always win over dynamic segments. Exact collisions are rejected during compilation instead of silently overwriting a route.
 
+URL parameters originate as strings. Class handlers may declare scalar PHP
+types (`int`, `float`, `string`, or `bool`): dispatch applies PHP's native
+scalar coercion rules without runtime metadata inspection. Invalid values still
+raise `TypeError`; use `where()` to reject them during route matching.
+
 Use `regex()` only for legacy patterns that cannot be represented as path segments. Regex routes are checked after the radix index:
 
 ```php
@@ -300,12 +305,12 @@ Representative local result (Apple M1 Pro, 16 GiB, macOS arm64, PHP 8.4.1, CLI O
 
 | Workload | Throughput | Latency |
 |---|---:|---:|
-| Static route, first | 642,979 ops/s | 1,555 ns/op |
-| Static route, middle | 644,294 ops/s | 1,552 ns/op |
-| Static route, last | 623,366 ops/s | 1,604 ns/op |
-| Dynamic constrained route, last | 462,970 ops/s | 2,160 ns/op |
+| Static route, first | 624,323 ops/s | 1,602 ns/op |
+| Static route, middle | 615,351 ops/s | 1,625 ns/op |
+| Static route, last | 617,759 ops/s | 1,619 ns/op |
+| Dynamic constrained route, last | 455,981 ops/s | 2,193 ns/op |
 
-The fixture contains 2,000 routes (1,000 static and 1,000 constrained dynamic routes), runs 5,000 warm-up dispatches per case, then measures 100,000 complete `Router::dispatch()` calls. Registration took 2.307 ms, compilation 3.356 ms, and peak memory was 8 MiB in this run.
+The fixture contains 2,000 routes (1,000 static and 1,000 constrained dynamic routes), runs 5,000 warm-up dispatches per case, then measures 100,000 complete `Router::dispatch()` calls. Registration took 2.535 ms, compilation 3.579 ms, and peak memory was 8 MiB in this run.
 
 These are internal microbenchmark results, not production capacity promises. Hardware, PHP builds, extensions, handler work, and middleware affect results. The important invariant is visible in the first/middle/last static cases: lookup cost does not grow with declaration position. Measure the complete application on its deployment target before making capacity decisions.
 
