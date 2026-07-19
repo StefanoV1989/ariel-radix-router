@@ -1,0 +1,9 @@
+/vendor/
+/build/
+/benchmarks/
+/.phpunit.cache/
+/composer.lock
+/example/
+/.idea/
+/.vscode/
+.DS_Store
