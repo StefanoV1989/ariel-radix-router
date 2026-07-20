@@ -4,7 +4,6 @@
 
     <file>src</file>
     <file>tests</file>
-    <file>benchmarks</file>
 
     <arg name="colors"/>
     <arg name="extensions" value="php"/>
