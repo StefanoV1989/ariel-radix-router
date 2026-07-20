@@ -18,6 +18,7 @@ It is a standalone library: no framework, container, or HTTP implementation is r
 - Optional file-backed compiled indexes designed to benefit from OPcache.
 - Explicit `404`/`405` distinction and configurable exception rendering.
 - Route groups, optional parameters, regex fallbacks, named URLs, and class handlers.
+- Laravel-like static facade plus an isolated, mockable instance API.
 - Zero runtime dependencies and strict PHP 8.4 types.
 - PHPUnit coverage, PHPStan level max, reproducible benchmarks, and CI on every change.
 
@@ -61,6 +62,69 @@ For tests and workers, pass the request explicitly:
 ```php
 $result = Router::dispatch(new Request('GET', '/users/42'));
 ```
+
+## Static facade and mockable instances
+
+The static `Router` facade remains the primary, shortest API and is suitable for
+normal FPM applications and Ariel. Applications that prefer dependency
+injection can instantiate `ArielRouter` instead. Every instance owns a separate
+engine, route catalog, group stack, and request context.
+
+```php
+use StefanoV1989\ArielRouter\ArielRouter;
+use StefanoV1989\ArielRouter\Contracts\RouterInterface;
+use StefanoV1989\ArielRouter\Http\Request;
+
+$router = new ArielRouter();
+
+$router->add('GET', '/health', static fn (): string => 'ok');
+$router->get('/users/{id}', [UserController::class, 'show'])
+    ->where('id', '[0-9]+');
+
+$router->group(['prefix' => '/api'], static function (RouterInterface $routes): void {
+    $routes->post('/users', [UserController::class, 'store']);
+});
+
+$result = $router->dispatch(new Request('GET', '/users/42'));
+```
+
+Both APIs use the same `RouterEngine`, matching logic, middleware lifecycle,
+compiled catalogs, and persistent-worker cleanup. The object API therefore
+works in FPM and Workerman without a separate adapter or different route
+semantics.
+
+Application services can depend on `RouterInterface` rather than the concrete
+or static router:
+
+```php
+use StefanoV1989\ArielRouter\Contracts\RouterInterface;
+use StefanoV1989\ArielRouter\Http\Request;
+
+final class RequestDispatcher
+{
+    public function __construct(private RouterInterface $router)
+    {
+    }
+
+    public function dispatch(Request $request): mixed
+    {
+        return $this->router->dispatch($request);
+    }
+}
+```
+
+This contract can be replaced by a hand-written fake or a PHPUnit mock:
+
+```php
+$router = $this->createMock(RouterInterface::class);
+$router->method('dispatch')->willReturn('mocked response');
+
+$service = new RequestDispatcher($router);
+```
+
+Static calls are not themselves mocked; use `RouterInterface` at boundaries
+where test substitution is useful. There is no requirement to replace existing
+`Router::get()` or `Router::dispatch()` usage.
 
 ## Routes
 
@@ -305,6 +369,18 @@ while ($request = $server->nextRequest()) {
 }
 ```
 
+The same lifecycle is available without static state:
+
+```php
+$router = new ArielRouter();
+require __DIR__ . '/routes-instance.php';
+$router->compile();
+
+while ($request = $server->nextRequest()) {
+    $server->respond($router->dispatch($request));
+}
+```
+
 Do not share arbitrary middleware objects. Use the lifecycle contracts documented above.
 
 ## Benchmarks
@@ -313,12 +389,19 @@ Representative local result (Apple M1 Pro, 16 GiB, macOS arm64, PHP 8.4.1, CLI O
 
 | Workload | Throughput | Latency |
 |---|---:|---:|
-| Static route, first | 637,116 ops/s | 1,570 ns/op |
-| Static route, middle | 633,886 ops/s | 1,578 ns/op |
-| Static route, last | 637,174 ops/s | 1,569 ns/op |
-| Dynamic constrained route, last | 473,596 ops/s | 2,112 ns/op |
+| Static route, first | 632,654 ops/s | 1,581 ns/op |
+| Static route, middle | 633,733 ops/s | 1,578 ns/op |
+| Static route, last | 632,447 ops/s | 1,581 ns/op |
+| Dynamic constrained route, last | 471,658 ops/s | 2,120 ns/op |
 
-The fixture contains 2,000 routes (1,000 static and 1,000 constrained dynamic routes), runs 5,000 warm-up dispatches per case, then measures 100,000 complete `Router::dispatch()` calls. Registration took 2.424 ms, compilation 3.755 ms, and peak memory was 8 MiB in this run.
+The fixture contains 2,000 routes (1,000 static and 1,000 constrained dynamic routes), runs 5,000 warm-up dispatches per case, then measures 100,000 complete `Router::dispatch()` calls. Median registration took 2.445 ms, median compilation 3.594 ms, and peak memory was 8 MiB across five runs.
+
+A separate parity run with 4,000 routes compared the static facade with a
+dedicated `ArielRouter` instance. Median results were 640,528 versus 656,398
+ops/s for static dispatch and 516,926 versus 523,420 ops/s for constrained
+dynamic dispatch; both used 12 MiB peak memory. The purpose of this comparison
+is to verify that instance isolation and mockability add no dispatch penalty,
+not to claim that one calling style is inherently faster.
 
 These are internal microbenchmark results, not production capacity promises. Hardware, PHP builds, extensions, handler work, and middleware affect results. The important invariant is visible in the first/middle/last static cases: lookup cost does not grow with declaration position. Measure the complete application on its deployment target before making capacity decisions.
 
