@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace StefanoV1989\ArielRouter\Cache;
 
-use StefanoV1989\ArielRouter\Contracts\Middleware;
-use StefanoV1989\ArielRouter\Contracts\MiddlewareFactory;
 use StefanoV1989\ArielRouter\Exception\RouteConflictException;
 use StefanoV1989\ArielRouter\Matching\RouteCondition;
 use StefanoV1989\ArielRouter\Route;
+use StefanoV1989\ArielRouter\RouteDefinition;
 
 /**
  * @phpstan-type Node array{s: array<string, mixed>, d: array<string, mixed>, r: array<string, int>}
  * @phpstan-type Handler \Closure|array{class-string|object, string}|string|object
+ * @phpstan-import-type ExportedDefinition from RouteDefinition
  */
 final class RouteCache
 {
@@ -56,7 +56,7 @@ final class RouteCache
 
     /**
      * @param list<Route> $routes
-     * @return list<array{methods: list<string>, path: string, handler: Handler, middleware: list<string|Middleware|MiddlewareFactory>, namespace: string|null, conditions: array<string, string>, parameters: list<string>, name: string|null, regex: string|null}>
+     * @return list<ExportedDefinition>
      */
     public static function definitions(array $routes): array
     {
@@ -84,11 +84,15 @@ final class RouteCache
 
     /**
      * @param list<Route> $routes
-     * @return array{version: int, definitions: list<array{methods: list<string>, path: string, handler: Handler, middleware: list<string|Middleware|MiddlewareFactory>, namespace: string|null, conditions: array<string, string>, parameters: list<string>, name: string|null, regex: string|null}>, tree: Node}
+     * @return array{version: int, definitions: list<ExportedDefinition>, tree: Node}
      */
     public static function payload(array $routes): array
     {
-        return ['version' => self::FORMAT_VERSION, 'definitions' => self::definitions($routes), 'tree' => self::build($routes)];
+        return [
+            'version' => self::FORMAT_VERSION,
+            'definitions' => self::definitions($routes),
+            'tree' => self::build($routes),
+        ];
     }
 
     /**
@@ -119,7 +123,11 @@ final class RouteCache
         if (is_file($file)) {
             return $file;
         }
-        $payload = '<?php return ' . var_export(['version' => self::FORMAT_VERSION, 'fingerprint' => $fingerprint, 'tree' => $tree], true) . ';';
+        $payload = '<?php return ' . var_export([
+            'version' => self::FORMAT_VERSION,
+            'fingerprint' => $fingerprint,
+            'tree' => $tree,
+        ], true) . ';';
         $temporary = tempnam($directory, 'radix-');
         if ($temporary === false) {
             return null;
@@ -149,11 +157,13 @@ final class RouteCache
             return null;
         }
         $payload = require $file;
-        if (!is_array($payload)
+        if (
+            !is_array($payload)
             || ($payload['version'] ?? null) !== self::FORMAT_VERSION
             || ($payload['fingerprint'] ?? null) !== $fingerprint
             || !isset($payload['tree'])
-            || !is_array($payload['tree'])) {
+            || !is_array($payload['tree'])
+        ) {
             return null;
         }
 
@@ -161,8 +171,14 @@ final class RouteCache
     }
 
     /** @param list<string> $segments */
-    private static function insert(CacheNode $node, array $segments, Route $route, int $routeIndex, int $offset, int $parameterIndex): void
-    {
+    private static function insert(
+        CacheNode $node,
+        array $segments,
+        Route $route,
+        int $routeIndex,
+        int $offset,
+        int $parameterIndex,
+    ): void {
         if ($offset === count($segments)) {
             foreach ($route->methods() as $method) {
                 if (isset($node->routes[$method]) && $node->routes[$method] !== $routeIndex) {
@@ -196,8 +212,7 @@ final class RouteCache
     {
         if (count($node->dynamic) > 1) {
             uksort($node->dynamic, static fn (string $left, string $right): int =>
-                (RouteCondition::priority($right) <=> RouteCondition::priority($left)) ?: strcmp($left, $right)
-            );
+                (RouteCondition::priority($right) <=> RouteCondition::priority($left)) ?: strcmp($left, $right));
         }
         foreach ($node->static as $child) {
             self::sortDynamic($child);
@@ -247,9 +262,16 @@ final class RouteCache
 
     private static function assertExportable(mixed $value, string $kind): void
     {
-        if (is_string($value) || (is_array($value) && count($value) === 2 && is_string($value[0]) && is_string($value[1]))) {
+        $isClassHandler = is_array($value)
+            && count($value) === 2
+            && is_string($value[0])
+            && is_string($value[1]);
+        if (is_string($value) || $isClassHandler) {
             return;
         }
-        throw new \LogicException(sprintf('Compiled definitions require %s values exportable as a class name or [class, method].', $kind));
+        throw new \LogicException(sprintf(
+            'Compiled definitions require %s values exportable as a class name or [class, method].',
+            $kind,
+        ));
     }
 }

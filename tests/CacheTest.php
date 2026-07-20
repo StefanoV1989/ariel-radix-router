@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use StefanoV1989\ArielRouter\Cache\RouteCache;
 use StefanoV1989\ArielRouter\Http\Request;
 use StefanoV1989\ArielRouter\IndexMode;
+use StefanoV1989\ArielRouter\Route;
 use StefanoV1989\ArielRouter\Router;
 use StefanoV1989\ArielRouter\RouterEngine;
 
@@ -96,12 +97,16 @@ final class CacheTest extends TestCase
 
         self::assertSame('17', Router::dispatch(new Request('GET', '/legacy/17')));
     }
-}
 
-final class CacheHandler
-{
-    public static function show(string $id): string
+    public function testLegacyArrayDefinitionsRemainAccepted(): void
     {
-        return $id;
+        Router::get('/users/{id}', CacheHandler::class . '::show')->where('id', '[0-9]+');
+        $payload = Router::compiledPayload();
+
+        $route = Route::fromDefinition($payload['definitions'][0], static function (): void {
+        });
+
+        self::assertSame('/users/{id}', $route->path());
+        self::assertSame(['id' => '[0-9]+'], $route->conditions());
     }
 }

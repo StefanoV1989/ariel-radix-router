@@ -4,41 +4,47 @@ declare(strict_types=1);
 
 namespace StefanoV1989\ArielRouter;
 
-use StefanoV1989\ArielRouter\Cache\RouteCache;
 use StefanoV1989\ArielRouter\Contracts\Middleware;
 use StefanoV1989\ArielRouter\Contracts\MiddlewareFactory;
+use StefanoV1989\ArielRouter\Contracts\RouterInterface;
 use StefanoV1989\ArielRouter\Http\Request;
 use StefanoV1989\ArielRouter\Http\Url;
 use StefanoV1989\ArielRouter\Matching\MatchResult;
 
 /**
+ * Static convenience facade backed by one ArielRouter instance.
+ *
  * @phpstan-type Handler \Closure|array{class-string|object, string}|string|object
  * @phpstan-type MiddlewareDefinition string|Middleware|MiddlewareFactory
- * @phpstan-type RouteOptions array{prefix?: string, namespace?: string, middleware?: MiddlewareDefinition|list<MiddlewareDefinition>, as?: string}
- * @phpstan-type Definition array{methods: list<string>, path: string, handler: Handler, middleware: list<MiddlewareDefinition>, namespace: string|null, conditions: array<string, string>, parameters: list<string>, name: string|null, regex: string|null}
+ * @phpstan-type RouteOptions array{
+ *     prefix?: string,
+ *     namespace?: string,
+ *     middleware?: MiddlewareDefinition|list<MiddlewareDefinition>,
+ *     as?: string
+ * }
  * @phpstan-type Node array{s: array<string, mixed>, d: array<string, mixed>, r: array<string, int>}
+ * @phpstan-import-type ExportedDefinition from RouteDefinition
  */
 final class Router
 {
     private static ?RouterEngine $engine = null;
-    private static ?string $defaultNamespace = null;
-
-    /** @var list<RouteGroup> */
-    private static array $groups = [];
-
-    /** @var array<string, true> */
-    private static array $catalogs = [];
+    private static ?ArielRouter $router = null;
 
     public static function engine(): RouterEngine
     {
-        return self::$engine ??= new RouterEngine();
+        $engine = self::$engine;
+        if ($engine === null) {
+            $engine = new RouterEngine();
+            self::useEngine($engine);
+        }
+
+        return $engine;
     }
 
     public static function useEngine(RouterEngine $engine): void
     {
         self::$engine = $engine;
-        self::$groups = [];
-        self::$catalogs = [];
+        self::$router = new ArielRouter($engine);
     }
 
     public static function configure(?string $cacheDirectory = null): RouterEngine
@@ -51,15 +57,22 @@ final class Router
 
     public static function reset(): void
     {
-        self::$groups = [];
-        self::$catalogs = [];
-        self::$defaultNamespace = null;
-        self::engine()->reset();
+        self::instance()->reset();
     }
 
     public static function setDefaultNamespace(?string $namespace): void
     {
-        self::$defaultNamespace = $namespace === null ? null : trim($namespace, '\\');
+        self::instance()->setDefaultNamespace($namespace);
+    }
+
+    /**
+     * @param list<string>|string $methods
+     * @param Handler $handler
+     * @param RouteOptions|null $options
+     */
+    public static function add(array|string $methods, string $path, mixed $handler, ?array $options = null): Route
+    {
+        return self::instance()->add($methods, $path, $handler, $options);
     }
 
     /**
@@ -68,7 +81,7 @@ final class Router
      */
     public static function get(string $path, mixed $handler, ?array $options = null): Route
     {
-        return self::match(['GET'], $path, $handler, $options);
+        return self::instance()->get($path, $handler, $options);
     }
 
     /**
@@ -77,7 +90,7 @@ final class Router
      */
     public static function post(string $path, mixed $handler, ?array $options = null): Route
     {
-        return self::match(['POST'], $path, $handler, $options);
+        return self::instance()->post($path, $handler, $options);
     }
 
     /**
@@ -86,7 +99,7 @@ final class Router
      */
     public static function put(string $path, mixed $handler, ?array $options = null): Route
     {
-        return self::match(['PUT'], $path, $handler, $options);
+        return self::instance()->put($path, $handler, $options);
     }
 
     /**
@@ -95,7 +108,7 @@ final class Router
      */
     public static function patch(string $path, mixed $handler, ?array $options = null): Route
     {
-        return self::match(['PATCH'], $path, $handler, $options);
+        return self::instance()->patch($path, $handler, $options);
     }
 
     /**
@@ -104,7 +117,7 @@ final class Router
      */
     public static function delete(string $path, mixed $handler, ?array $options = null): Route
     {
-        return self::match(['DELETE'], $path, $handler, $options);
+        return self::instance()->delete($path, $handler, $options);
     }
 
     /**
@@ -113,7 +126,7 @@ final class Router
      */
     public static function options(string $path, mixed $handler, ?array $options = null): Route
     {
-        return self::match(['OPTIONS'], $path, $handler, $options);
+        return self::instance()->options($path, $handler, $options);
     }
 
     /**
@@ -122,7 +135,7 @@ final class Router
      */
     public static function head(string $path, mixed $handler, ?array $options = null): Route
     {
-        return self::match(['HEAD'], $path, $handler, $options);
+        return self::instance()->head($path, $handler, $options);
     }
 
     /**
@@ -131,7 +144,7 @@ final class Router
      */
     public static function any(string $path, mixed $handler, ?array $options = null): Route
     {
-        return self::match(['*'], $path, $handler, $options);
+        return self::instance()->any($path, $handler, $options);
     }
 
     /**
@@ -140,7 +153,7 @@ final class Router
      */
     public static function all(string $path, mixed $handler, ?array $options = null): Route
     {
-        return self::any($path, $handler, $options);
+        return self::instance()->all($path, $handler, $options);
     }
 
     /**
@@ -150,40 +163,7 @@ final class Router
      */
     public static function match(array $methods, string $path, mixed $handler, ?array $options = null): Route
     {
-        $prefix = '';
-        $middleware = [];
-        $namespace = self::$defaultNamespace;
-        foreach (self::$groups as $group) {
-            $prefix .= $group->prefix;
-            $middleware = [...$middleware, ...$group->middleware];
-            if ($group->namespace !== null) {
-                $namespace = self::joinNamespace($namespace, $group->namespace);
-            }
-        }
-
-        if (isset($options['prefix'])) {
-            $prefix .= $options['prefix'];
-        }
-        if (isset($options['namespace'])) {
-            $namespace = self::joinNamespace($namespace, $options['namespace']);
-        }
-        if (isset($options['middleware'])) {
-            $middleware = [...$middleware, ...self::middlewareList($options['middleware'])];
-        }
-
-        $route = new Route(
-            $methods,
-            self::joinPath($prefix, $path),
-            $handler,
-            $middleware,
-            $namespace,
-            self::engine()->markDirty(...),
-        );
-        if (isset($options['as'])) {
-            $route->name($options['as']);
-        }
-
-        return self::engine()->add($route);
+        return self::instance()->match($methods, $path, $handler, $options);
     }
 
     /**
@@ -192,19 +172,12 @@ final class Router
      */
     public static function group(array $options, \Closure $routes): RouteGroup
     {
-        $group = new RouteGroup(
-            $options['prefix'] ?? '',
-            self::middlewareList($options['middleware'] ?? []),
-            $options['namespace'] ?? null,
+        return self::instance()->group(
+            $options,
+            static function (RouterInterface $router) use ($routes): void {
+                $routes();
+            },
         );
-        self::$groups[] = $group;
-        try {
-            $routes();
-        } finally {
-            array_pop(self::$groups);
-        }
-
-        return $group;
     }
 
     /** @param \Closure(Request, \Throwable): mixed $handler */
@@ -228,7 +201,9 @@ final class Router
         $result = self::dispatch();
         if ($result !== null) {
             if (!is_scalar($result) && !$result instanceof \Stringable) {
-                throw new \UnexpectedValueException('Router::start() can only emit scalar or Stringable handler results.');
+                throw new \UnexpectedValueException(
+                    'Router::start() can only emit scalar or Stringable handler results.',
+                );
             }
             echo $result;
         }
@@ -262,18 +237,12 @@ final class Router
 
     public static function namedRoute(string $name): ?Route
     {
-        foreach (self::engine()->routes() as $route) {
-            if ($route->getName() === $name) {
-                return $route;
-            }
-        }
-
-        return null;
+        return self::instance()->namedRoute($name);
     }
 
     public static function hasNamedRoute(string $name): bool
     {
-        return self::namedRoute($name) !== null;
+        return self::instance()->hasNamedRoute($name);
     }
 
     public static function resolve(string $method, string $path): MatchResult
@@ -302,135 +271,48 @@ final class Router
      */
     public static function url(string $name, array $parameters = [], array $query = []): Url
     {
-        $route = self::namedRoute($name);
-        if ($route === null) {
-            throw new \InvalidArgumentException(sprintf('Named route "%s" does not exist.', $name));
-        }
-
-        $position = 0;
-        $path = preg_replace_callback(
-            '/\{([A-Za-z_][A-Za-z0-9_]*)\??\}/',
-            static function (array $matches) use ($parameters, &$position): string {
-                $value = $parameters[$matches[1]] ?? $parameters[$position] ?? null;
-                ++$position;
-                if ($value === null) {
-                    return '';
-                }
-
-                return rawurlencode((string) $value);
-            },
-            $route->path(),
-        ) ?? $route->path();
-        $path = preg_replace('~/+~', '/', $path) ?? $path;
-        if ($path !== '/') {
-            $path = rtrim($path, '/');
-        }
-        if ($query !== []) {
-            $path .= '?' . http_build_query($query);
-        }
-
-        return new Url($path);
+        return self::instance()->url($name, $parameters, $query);
     }
 
     /**
      * @param array<string, scalar|null>|list<scalar|null>|scalar|null $parameters
      * @param array<string, scalar|null>|null $query
      */
-    public static function getUrl(?string $name = null, array|string|int|float|bool|null $parameters = null, ?array $query = null): Url
-    {
-        if ($name === null) {
-            $name = self::currentRoute()?->getName();
-        }
-        if ($name === null) {
-            return new Url('/');
-        }
-        $values = is_array($parameters) ? $parameters : ($parameters === null ? [] : [$parameters]);
-
-        return self::url($name, $values, $query ?? []);
+    public static function getUrl(
+        ?string $name = null,
+        array|string|int|float|bool|null $parameters = null,
+        ?array $query = null,
+    ): Url {
+        return self::instance()->getUrl($name, $parameters, $query);
     }
 
-    /** @return array{version: int, definitions: list<Definition>, tree: Node} */
+    /** @return array{version: int, definitions: list<ExportedDefinition>, tree: Node} */
     public static function compiledPayload(): array
     {
-        return RouteCache::payload(self::engine()->routes());
+        return self::instance()->compiledPayload();
     }
 
-    /** @param array{version: int, definitions: list<Definition>, tree: Node} $payload */
+    /** @param array{version: int, definitions: list<ExportedDefinition>, tree: Node} $payload */
     public static function appendCompiledDefinitions(string $catalog, array $payload): void
     {
-        if (isset(self::$catalogs[$catalog])) {
-            return;
-        }
-        if ($payload['version'] !== RouteCache::FORMAT_VERSION) {
-            throw new \RuntimeException('Unsupported compiled route format.');
-        }
-
-        $definitions = $payload['definitions'];
-        $prefix = '';
-        $middleware = [];
-        $namespace = self::$defaultNamespace;
-        foreach (self::$groups as $group) {
-            $prefix .= $group->prefix;
-            $middleware = [...$middleware, ...$group->middleware];
-            if ($group->namespace !== null) {
-                $namespace = self::joinNamespace($namespace, $group->namespace);
-            }
-        }
-        if ($prefix !== '' || $middleware !== [] || $namespace !== self::$defaultNamespace) {
-            foreach ($definitions as &$definition) {
-                $definition['path'] = self::joinPath($prefix, $definition['path']);
-                $definition['middleware'] = [...$middleware, ...$definition['middleware']];
-                if ($namespace !== null && $namespace !== '') {
-                    $definition['namespace'] = $definition['namespace'] === null
-                        ? $namespace
-                        : self::joinNamespace($namespace, $definition['namespace']);
-                }
-            }
-            unset($definition);
-        }
-        $tree = RouteCache::prefix($payload['tree'], $prefix);
-        self::engine()->appendCompiled($definitions, $tree);
-        self::$catalogs[$catalog] = true;
+        self::instance()->appendCompiledDefinitions($catalog, $payload);
     }
 
     public static function definitionCatalogLoaded(string $catalog): bool
     {
-        return isset(self::$catalogs[$catalog]);
+        return self::instance()->definitionCatalogLoaded($catalog);
     }
 
-    private static function joinPath(string $prefix, string $path): string
+    private static function instance(): ArielRouter
     {
-        $joined = '/' . trim(trim($prefix, '/') . '/' . trim($path, '/'), '/');
-
-        return $joined;
-    }
-
-    private static function joinNamespace(?string $base, string $namespace): string
-    {
-        $namespace = trim($namespace, '\\');
-        if ($base === null || $base === '') {
-            return $namespace;
+        $router = self::$router;
+        if ($router === null) {
+            $engine = new RouterEngine();
+            $router = new ArielRouter($engine);
+            self::$engine = $engine;
+            self::$router = $router;
         }
 
-        return trim($base, '\\') . '\\' . $namespace;
-    }
-
-    /** @return list<MiddlewareDefinition> */
-    private static function middlewareList(mixed $middleware): array
-    {
-        if ($middleware === null || $middleware === '') {
-            return [];
-        }
-        $items = array_values(is_array($middleware) ? $middleware : [$middleware]);
-        $result = [];
-        foreach ($items as $item) {
-            if (!is_string($item) && !$item instanceof Middleware && !$item instanceof MiddlewareFactory) {
-                throw new \InvalidArgumentException('Middleware must be a middleware class name or object.');
-            }
-            Route::assertMiddleware($item);
-            $result[] = $item;
-        }
-
-        return $result;
+        return $router;
     }
 }
