@@ -4,6 +4,16 @@ All notable changes to this project will be documented here. The format follows 
 
 ## [Unreleased]
 
+### Added
+
+- Add an immutable, typed `RouteDefinition` snapshot for route metadata and compiled catalog loading.
+- Enforce PSR-12 automatically with PHP_CodeSniffer in local checks and CI.
+
+### Changed
+
+- Format the complete source, test, and benchmark suites according to PSR-12.
+- Keep compiled payload arrays only at the serialization boundary for compatibility with existing catalog files.
+
 ## [1.0.1] - 2026-07-19
 
 ### Fixed

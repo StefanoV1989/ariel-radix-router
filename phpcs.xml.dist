@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<ruleset name="Ariel Router">
+    <description>PSR-12 coding standard for Ariel Router.</description>
+
+    <file>src</file>
+    <file>tests</file>
+    <file>benchmarks</file>
+
+    <arg name="colors"/>
+    <arg name="extensions" value="php"/>
+    <arg name="parallel" value="8"/>
+
+    <rule ref="PSR12"/>
+</ruleset>

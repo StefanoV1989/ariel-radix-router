@@ -27,8 +27,6 @@ It is a standalone library: no framework, container, or HTTP implementation is r
 composer require stefanov1989/ariel-radix-router
 ```
 
-Until the first Packagist release, use the repository as a Composer VCS repository or a local path repository.
-
 ## Quick start
 
 ```php
@@ -254,7 +252,17 @@ $route?->methods();
 $route?->middlewares();
 $route?->conditions();
 $route?->parameterNames();
+
+$definition = $route?->definition(); // immutable RouteDefinition|null
+$definition?->path;
+$definition?->methods;
 ```
+
+`RouteDefinition` is a typed, `readonly` snapshot of a route. It replaces large
+internal array shapes when compiled catalogs are loaded and composed. The
+exported payload returned by `compiledPayload()` remains an array so it can be
+stored efficiently with `var_export()` and stays compatible with existing
+catalog files.
 
 ## Compilation and production cache
 
@@ -305,25 +313,26 @@ Representative local result (Apple M1 Pro, 16 GiB, macOS arm64, PHP 8.4.1, CLI O
 
 | Workload | Throughput | Latency |
 |---|---:|---:|
-| Static route, first | 624,323 ops/s | 1,602 ns/op |
-| Static route, middle | 615,351 ops/s | 1,625 ns/op |
-| Static route, last | 617,759 ops/s | 1,619 ns/op |
-| Dynamic constrained route, last | 455,981 ops/s | 2,193 ns/op |
+| Static route, first | 637,116 ops/s | 1,570 ns/op |
+| Static route, middle | 633,886 ops/s | 1,578 ns/op |
+| Static route, last | 637,174 ops/s | 1,569 ns/op |
+| Dynamic constrained route, last | 473,596 ops/s | 2,112 ns/op |
 
-The fixture contains 2,000 routes (1,000 static and 1,000 constrained dynamic routes), runs 5,000 warm-up dispatches per case, then measures 100,000 complete `Router::dispatch()` calls. Registration took 2.535 ms, compilation 3.579 ms, and peak memory was 8 MiB in this run.
+The fixture contains 2,000 routes (1,000 static and 1,000 constrained dynamic routes), runs 5,000 warm-up dispatches per case, then measures 100,000 complete `Router::dispatch()` calls. Registration took 2.424 ms, compilation 3.755 ms, and peak memory was 8 MiB in this run.
 
 These are internal microbenchmark results, not production capacity promises. Hardware, PHP builds, extensions, handler work, and middleware affect results. The important invariant is visible in the first/middle/last static cases: lookup cost does not grow with declaration position. Measure the complete application on its deployment target before making capacity decisions.
 
 ## Quality checks
 
 ```bash
-composer check       # PHPUnit, then PHPStan level max
+composer check       # PSR-12, PHPUnit, then PHPStan level max
+composer style       # PSR-12 compliance
 composer test
 composer stan
 composer validate --strict
 ```
 
-The CI workflow validates Composer metadata, tests the supported PHP baseline, and runs PHPStan at level max without a baseline or ignored errors.
+The CI workflow validates Composer metadata, enforces PSR-12, tests the supported PHP baseline, and runs PHPStan at level max without a baseline or ignored errors.
 
 ## Versioning and maintenance
 

@@ -11,9 +11,11 @@ use StefanoV1989\ArielRouter\Exception\RouteConflictException;
 use StefanoV1989\ArielRouter\Http\Request;
 use StefanoV1989\ArielRouter\Router;
 use StefanoV1989\ArielRouter\RouterEngine;
+use StefanoV1989\ArielRouter\RouteDefinition;
 
 #[CoversClass(Router::class)]
 #[CoversClass(RouterEngine::class)]
+#[CoversClass(RouteDefinition::class)]
 final class RouterTest extends TestCase
 {
     protected function setUp(): void
@@ -100,7 +102,10 @@ final class RouterTest extends TestCase
 
     public function testCustomErrorHandlerCanRenderExceptions(): void
     {
-        Router::error(static fn (Request $request, \Throwable $error): string => $request->url()->path() . ':' . $error->getCode());
+        Router::error(
+            static fn (Request $request, \Throwable $error): string =>
+                $request->url()->path() . ':' . $error->getCode(),
+        );
 
         self::assertSame('/missing:404', Router::dispatch(new Request('GET', '/missing')));
     }
@@ -200,28 +205,21 @@ final class RouterTest extends TestCase
         self::assertSame([42, 1.5, false], Router::dispatch(new Request('GET', '/typed/42/1.5/0')));
         self::assertSame('typed:7', Router::dispatch(new Request('GET', '/typed-controller/7')));
     }
-}
 
-final class TestController
-{
-    public static function staticShow(string $id): string
+    public function testExposesAnImmutableTypedRouteDefinition(): void
     {
-        return 'static:' . $id;
-    }
+        $route = Router::get('/users/{id}', [TestController::class, 'typedShow'])
+            ->where('id', '[0-9]+')
+            ->name('users.show');
 
-    public function show(string $id): string
-    {
-        return 'instance:' . $id;
-    }
+        $definition = $route->definition();
+        $restored = RouteDefinition::fromArray($definition->toArray());
 
-    public function typedShow(int $id): string
-    {
-        return 'typed:' . $id;
-    }
-
-    /** @return array{int, float, bool} */
-    public static function typedScalars(int $id, float $ratio, bool $enabled): array
-    {
-        return [$id, $ratio, $enabled];
+        self::assertSame(['get'], $definition->methods);
+        self::assertSame('/users/{id}', $definition->path);
+        self::assertSame(['id' => '[0-9]+'], $definition->conditions);
+        self::assertSame(['id'], $definition->parameters);
+        self::assertSame('users.show', $definition->name);
+        self::assertSame($definition->toArray(), $restored->toArray());
     }
 }

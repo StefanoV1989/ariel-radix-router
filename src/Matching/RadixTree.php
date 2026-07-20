@@ -90,8 +90,8 @@ final class RadixTree implements RouteMatcher
         $dynamic = array_values($node->dynamic);
         if (count($dynamic) > 1) {
             usort($dynamic, static fn (array $left, array $right): int =>
-                ($right['priority'] <=> $left['priority']) ?: strcmp($left['condition'] ?? '', $right['condition'] ?? '')
-            );
+                ($right['priority'] <=> $left['priority'])
+                ?: strcmp($left['condition'] ?? '', $right['condition'] ?? ''));
         }
 
         $methodNotAllowed = false;

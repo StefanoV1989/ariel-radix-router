@@ -26,7 +26,8 @@ final class RouteCondition
             '[01]' => $value === '0' || $value === '1',
             '[0-9]+', '\\d+' => $value !== '' && ctype_digit($value),
             '[0-9]+(\\.[0-9]+)?' => self::isUnsignedDecimal($value),
-            '[A-Za-z ]+', '[a-zA-Z ]+' => $value !== '' && strspn($value, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ ') === strlen($value),
+            '[A-Za-z ]+', '[a-zA-Z ]+' => $value !== ''
+                && strspn($value, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ ') === strlen($value),
             '[a-zA-Z0-9_]+', '[A-Za-z0-9_]+' => $value !== '' && ctype_alnum(str_replace('_', '', $value)),
             default => preg_match('~^(?:' . str_replace('~', '\\~', $condition) . ')$~D', $value) === 1,
         };

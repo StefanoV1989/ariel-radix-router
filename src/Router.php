@@ -14,9 +14,14 @@ use StefanoV1989\ArielRouter\Matching\MatchResult;
 /**
  * @phpstan-type Handler \Closure|array{class-string|object, string}|string|object
  * @phpstan-type MiddlewareDefinition string|Middleware|MiddlewareFactory
- * @phpstan-type RouteOptions array{prefix?: string, namespace?: string, middleware?: MiddlewareDefinition|list<MiddlewareDefinition>, as?: string}
- * @phpstan-type Definition array{methods: list<string>, path: string, handler: Handler, middleware: list<MiddlewareDefinition>, namespace: string|null, conditions: array<string, string>, parameters: list<string>, name: string|null, regex: string|null}
+ * @phpstan-type RouteOptions array{
+ *     prefix?: string,
+ *     namespace?: string,
+ *     middleware?: MiddlewareDefinition|list<MiddlewareDefinition>,
+ *     as?: string
+ * }
  * @phpstan-type Node array{s: array<string, mixed>, d: array<string, mixed>, r: array<string, int>}
+ * @phpstan-import-type ExportedDefinition from RouteDefinition
  */
 final class Router
 {
@@ -228,7 +233,9 @@ final class Router
         $result = self::dispatch();
         if ($result !== null) {
             if (!is_scalar($result) && !$result instanceof \Stringable) {
-                throw new \UnexpectedValueException('Router::start() can only emit scalar or Stringable handler results.');
+                throw new \UnexpectedValueException(
+                    'Router::start() can only emit scalar or Stringable handler results.',
+                );
             }
             echo $result;
         }
@@ -336,8 +343,11 @@ final class Router
      * @param array<string, scalar|null>|list<scalar|null>|scalar|null $parameters
      * @param array<string, scalar|null>|null $query
      */
-    public static function getUrl(?string $name = null, array|string|int|float|bool|null $parameters = null, ?array $query = null): Url
-    {
+    public static function getUrl(
+        ?string $name = null,
+        array|string|int|float|bool|null $parameters = null,
+        ?array $query = null,
+    ): Url {
         if ($name === null) {
             $name = self::currentRoute()?->getName();
         }
@@ -349,13 +359,13 @@ final class Router
         return self::url($name, $values, $query ?? []);
     }
 
-    /** @return array{version: int, definitions: list<Definition>, tree: Node} */
+    /** @return array{version: int, definitions: list<ExportedDefinition>, tree: Node} */
     public static function compiledPayload(): array
     {
         return RouteCache::payload(self::engine()->routes());
     }
 
-    /** @param array{version: int, definitions: list<Definition>, tree: Node} $payload */
+    /** @param array{version: int, definitions: list<ExportedDefinition>, tree: Node} $payload */
     public static function appendCompiledDefinitions(string $catalog, array $payload): void
     {
         if (isset(self::$catalogs[$catalog])) {
@@ -365,7 +375,7 @@ final class Router
             throw new \RuntimeException('Unsupported compiled route format.');
         }
 
-        $definitions = $payload['definitions'];
+        $definitions = array_map(RouteDefinition::fromArray(...), $payload['definitions']);
         $prefix = '';
         $middleware = [];
         $namespace = self::$defaultNamespace;
@@ -377,16 +387,19 @@ final class Router
             }
         }
         if ($prefix !== '' || $middleware !== [] || $namespace !== self::$defaultNamespace) {
-            foreach ($definitions as &$definition) {
-                $definition['path'] = self::joinPath($prefix, $definition['path']);
-                $definition['middleware'] = [...$middleware, ...$definition['middleware']];
+            foreach ($definitions as $index => $definition) {
+                $definitionNamespace = $definition->namespace;
                 if ($namespace !== null && $namespace !== '') {
-                    $definition['namespace'] = $definition['namespace'] === null
+                    $definitionNamespace = $definitionNamespace === null
                         ? $namespace
-                        : self::joinNamespace($namespace, $definition['namespace']);
+                        : self::joinNamespace($namespace, $definitionNamespace);
                 }
+                $definitions[$index] = $definition->withContext(
+                    self::joinPath($prefix, $definition->path),
+                    [...$middleware, ...$definition->middleware],
+                    $definitionNamespace,
+                );
             }
-            unset($definition);
         }
         $tree = RouteCache::prefix($payload['tree'], $prefix);
         self::engine()->appendCompiled($definitions, $tree);

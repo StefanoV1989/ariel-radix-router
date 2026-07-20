@@ -9,12 +9,13 @@ Requirements are PHP 8.4+ and Composer 2.
 ```bash
 composer install
 composer check
+composer style
 ```
 
 Before opening a pull request:
 
 1. Add or update tests for behavior changes.
-2. Run `composer check` with no PHPStan baseline or ignored errors.
+2. Run `composer check` with no PSR-12 violations, PHPStan baseline, or ignored errors.
 3. Document public API changes in the README and changelog.
 4. Include comparable before/after measurements for performance-sensitive changes, using the same machine and workload.
 5. Keep runtime dependencies at zero unless there is a compelling interoperability reason.

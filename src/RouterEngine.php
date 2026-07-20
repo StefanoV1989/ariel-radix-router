@@ -21,8 +21,8 @@ use StefanoV1989\ArielRouter\Matching\RouteMatcher;
 /**
  * @phpstan-type Handler \Closure|array{class-string|object, string}|string|object
  * @phpstan-type MiddlewareDefinition string|Middleware|MiddlewareFactory
- * @phpstan-type Definition array{methods: list<string>, path: string, handler: Handler, middleware: list<MiddlewareDefinition>, namespace: string|null, conditions: array<string, string>, parameters: list<string>, name: string|null, regex: string|null}
  * @phpstan-type Node array{s: array<string, mixed>, d: array<string, mixed>, r: array<string, int>}
+ * @phpstan-import-type ExportedDefinition from RouteDefinition
  */
 final class RouterEngine
 {
@@ -211,7 +211,11 @@ final class RouterEngine
                 $status = $result->methodNotAllowed ? 405 : 404;
                 throw new HttpException(
                     $result->methodNotAllowed
-                        ? sprintf('Method "%s" is not allowed for route "%s".', strtoupper($request->method()), $request->url()->path())
+                        ? sprintf(
+                            'Method "%s" is not allowed for route "%s".',
+                            strtoupper($request->method()),
+                            $request->url()->path(),
+                        )
                         : sprintf('Route "%s" was not found.', $request->url()->path()),
                     $status,
                 );
@@ -250,7 +254,7 @@ final class RouterEngine
     }
 
     /**
-     * @param list<Definition> $definitions
+     * @param list<ExportedDefinition|RouteDefinition> $definitions
      * @param Node $tree
      */
     public function appendCompiled(array $definitions, array $tree): void
@@ -258,6 +262,9 @@ final class RouterEngine
         $this->prepareMutation();
         $catalog = [];
         foreach ($definitions as $definition) {
+            if (is_array($definition)) {
+                $definition = RouteDefinition::fromArray($definition);
+            }
             $route = Route::fromDefinition($definition, $this->markDirty(...));
             $route->freeze();
             $catalog[] = $route;
@@ -379,7 +386,9 @@ final class RouterEngine
             return;
         }
         if (!$this->routeMutationAllowed) {
-            throw new \LogicException('Routes are immutable after compile(). Enable route mutation explicitly for development.');
+            throw new \LogicException(
+                'Routes are immutable after compile(). Enable route mutation explicitly for development.',
+            );
         }
         foreach ($this->routes as $route) {
             $route->unfreeze();

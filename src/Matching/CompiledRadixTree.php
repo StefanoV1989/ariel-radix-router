@@ -60,7 +60,13 @@ final class CompiledRadixTree implements RouteMatcher
             if (!RouteCondition::matches($segment, $condition)) {
                 continue;
             }
-            $result = $this->walk(self::normalizeNode($candidate), $segments, $offset + 1, $method, [...$parameters, $segment]);
+            $result = $this->walk(
+                self::normalizeNode($candidate),
+                $segments,
+                $offset + 1,
+                $method,
+                [...$parameters, $segment],
+            );
             if ($result->route !== null) {
                 return $result;
             }
